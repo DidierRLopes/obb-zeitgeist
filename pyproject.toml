@@ -5,12 +5,14 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "dicttoxml>=1.7.16",
+    "fastapi>=0.121.1",
     "gnews>=0.4.1",
     "marimo>=0.14.11",
     "markdown-it-py>=3.0.0",
     "polars>=1.31.0",
     "pydantic-ai>=0.4.3",
     "requests>=2.32.4",
+    "uvicorn[standard]>=0.35.0",
 ]
 [tool.marimo.runtime]
 dotenv = [".env"]

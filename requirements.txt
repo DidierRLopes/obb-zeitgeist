@@ -1,0 +1,9 @@
+dicttoxml>=1.7.16
+gnews>=0.4.1
+markdown-it-py>=3.0.0
+polars>=1.31.0
+pydantic-ai>=0.4.3
+requests>=2.32.4
+fastapi>=0.115.0
+uvicorn>=0.35.0
+python-dotenv>=1.1.1
