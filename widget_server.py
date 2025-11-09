@@ -1,25 +1,26 @@
 import asyncio
-from datetime import date
 import json
-from pathlib import Path
 import os
+from datetime import date
 from functools import wraps
 from textwrap import dedent
 
 import polars as pl
-from pydantic import BaseModel, Field
-from pydantic_ai import Agent
 import requests
+from dicttoxml import dicttoxml
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from gnews import GNews
 from markdown_it import MarkdownIt
-from dotenv import load_dotenv
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent
 
 # Load environment variables from .env file
 load_dotenv()
 
-BATCH_SIZE = 500
+BATCH_SIZE = 2
 RETRIES = 3
 DEFAULT_MODEL = "openai:gpt-4.1-2025-04-14"
 
@@ -76,12 +77,9 @@ def get_widgets():
 
 @app.get("/apps.json")
 def get_apps():
-    """Apps configuration file for OpenBB Workspace"""
-    import json
     try:
         with open("apps.json", "r") as f:
-            apps_config = json.load(f)
-        return apps_config
+            return json.load(f)
     except FileNotFoundError:
         return []
 
@@ -152,26 +150,23 @@ def fetch_from_polymarket() -> pl.DataFrame:
     return pl.DataFrame([simple_prediction(p) for p in predictions[:MAX_PREDICTIONS]])
 
 async def generate_report(investor_type: str = "equities", gnews_api_key: str = None) -> str:
+    # Set up GNews API key in environment before importing
+    original_gnews_key = None
+    if gnews_api_key:
+        original_gnews_key = os.environ.get("GNEWS_API_KEY")
+        os.environ["GNEWS_API_KEY"] = gnews_api_key
+    
     try:
         kalshi_predictions = fetch_from_kalshi()
         polymarket_predictions = fetch_from_polymarket()
         predictions = pl.concat([kalshi_predictions, polymarket_predictions])
         
-        from gnews import GNews
+        MAX_PREDICTIONS_TO_ANALYZE = 50
+        if len(predictions) > MAX_PREDICTIONS_TO_ANALYZE:
+            predictions = predictions.head(MAX_PREDICTIONS_TO_ANALYZE)
         
-        # Initialize GNews with API key if provided
-        if gnews_api_key:
-            gnews = GNews(api_key=gnews_api_key)
-        else:
-            # Try environment variable
-            env_gnews_key = os.environ.get("GNEWS_API_KEY")
-            if env_gnews_key:
-                gnews = GNews(api_key=env_gnews_key)
-            else:
-                gnews = GNews()  # Use free tier
-        
+        gnews = GNews()
         news = gnews.get_top_news()
-        print(f"Fetched {len(news)} news headlines")
         
         investor_profiles = {
             "equities": dedent("""
@@ -249,20 +244,21 @@ async def generate_report(investor_type: str = "equities", gnews_api_key: str = 
         async def tag_predictions(predictions: pl.DataFrame) -> pl.DataFrame:
             dfs = []
             for i, batch in enumerate(predictions.iter_slices(BATCH_SIZE)):
-                print(f"Processing batch {i} ...")
-                result = await relevant_prediction_agent.run(batch.write_json())
-                if result.output:
-                    dfs.append(pl.DataFrame(result.output))
-                await asyncio.sleep(1)
+                try:
+                    result = await relevant_prediction_agent.run(batch.write_json())
+                    if result.output:
+                        dfs.append(pl.DataFrame(result.output))
+                except Exception as e:
+                    print(f"Error processing batch {i+1}: {e}")
             
-            relevant_predictions = pl.concat(dfs)
-            print(f"Picked {len(relevant_predictions)} relevant predictions from {len(predictions)}")
-            return predictions.join(relevant_predictions, on="id", how="left")
+            if dfs:
+                relevant_predictions = pl.concat(dfs)
+                return predictions.join(relevant_predictions, on="id", how="left")
+            return predictions
         
         tagged_predictions = await tag_predictions(predictions)
         
         def to_xml_str(input: dict) -> str:
-            from dicttoxml import dicttoxml
             return dicttoxml(input, xml_declaration=False, root=False, attr_type=False, return_bytes=False)
         
         synthesizing_agent = Agent(
@@ -310,6 +306,12 @@ async def generate_report(investor_type: str = "equities", gnews_api_key: str = 
     except Exception as e:
         print(f"Error generating report: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if gnews_api_key:
+            if original_gnews_key is not None:
+                os.environ["GNEWS_API_KEY"] = original_gnews_key
+            elif "GNEWS_API_KEY" in os.environ:
+                del os.environ["GNEWS_API_KEY"]
 
 @register_widget({
     "name": "Zeitgeist Market Insights",
@@ -338,8 +340,9 @@ async def generate_report(investor_type: str = "equities", gnews_api_key: str = 
 @app.get("/zeitgeist_report")
 async def zeitgeist_report(request: Request, investor_type: str = "equities"):
     """Generate Zeitgeist market insights report"""
-    # Check for API key in headers first, then environment
-    api_key = request.headers.get('X-OPENAI-API-KEY') or os.environ.get("OPENAI_API_KEY")
+    api_key = request.headers.get('X-OPENAI-API-KEY')
+    if not api_key:
+        api_key = os.environ.get("OPENAI_API_KEY")
     
     if not api_key:
         raise HTTPException(
@@ -347,18 +350,17 @@ async def zeitgeist_report(request: Request, investor_type: str = "equities"):
             detail="OpenAI API key required. Set OPENAI_API_KEY environment variable or add 'X-OPENAI-API-KEY' header when connecting backend to OpenBB Workspace."
         )
     
-    # Temporarily set the API key in environment for pydantic-ai
     original_key = os.environ.get("OPENAI_API_KEY")
     os.environ["OPENAI_API_KEY"] = api_key
     
     try:
-        # Check for GNews API key in headers or environment
-        gnews_api_key = request.headers.get('X-GNEWS-API-KEY') or os.environ.get("GNEWS_API_KEY")
+        gnews_api_key = request.headers.get('X-GNEWS-API-KEY')
+        if not gnews_api_key:
+            gnews_api_key = os.environ.get("GNEWS_API_KEY")
         
         report = await generate_report(investor_type, gnews_api_key)
         return report
     finally:
-        # Restore original environment state
         if original_key is not None:
             os.environ["OPENAI_API_KEY"] = original_key
         elif "OPENAI_API_KEY" in os.environ:
@@ -391,8 +393,10 @@ async def zeitgeist_report(request: Request, investor_type: str = "equities"):
 @app.get("/zeitgeist_html", response_class=HTMLResponse)
 async def zeitgeist_html(request: Request, investor_type: str = "equities"):
     """Generate styled HTML version of Zeitgeist report"""
-    # Check for API key in headers first, then environment
-    api_key = request.headers.get('X-OPENAI-API-KEY') or os.environ.get("OPENAI_API_KEY")
+    # Check for API key in headers first, then environment (header has priority)
+    api_key = request.headers.get('X-OPENAI-API-KEY')
+    if not api_key:
+        api_key = os.environ.get("OPENAI_API_KEY")
     
     if not api_key:
         raise HTTPException(
@@ -405,15 +409,15 @@ async def zeitgeist_html(request: Request, investor_type: str = "equities"):
     os.environ["OPENAI_API_KEY"] = api_key
     
     try:
-        # Check for GNews API key in headers or environment
-        gnews_api_key = request.headers.get('X-GNEWS-API-KEY') or os.environ.get("GNEWS_API_KEY")
+        gnews_api_key = request.headers.get('X-GNEWS-API-KEY')
+        if not gnews_api_key:
+            gnews_api_key = os.environ.get("GNEWS_API_KEY")
         
         markdown_report = await generate_report(investor_type, gnews_api_key)
         html_content = MarkdownIt().render(markdown_report)
     except Exception as e:
         html_content = f"<h1>Error Generating Report</h1>\n<p>Error: {str(e)}</p>"
     finally:
-        # Restore original environment state
         if original_key is not None:
             os.environ["OPENAI_API_KEY"] = original_key
         elif "OPENAI_API_KEY" in os.environ:
