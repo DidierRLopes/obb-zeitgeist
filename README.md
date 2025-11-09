@@ -1,10 +1,12 @@
 # OpenBB Zeitgeist
 
-<img width="3416" height="2118" alt="CleanShot 2025-11-09 at 09 46 36@2x" src="https://github.com/user-attachments/assets/1b3996a2-627d-4550-b717-eceb913049c7" />
+<img width="800" alt="CleanShot 2025-11-09 at 09 46 36@2x" src="https://github.com/user-attachments/assets/1b3996a2-627d-4550-b717-eceb913049c7" />
 
 From prediction markets to Macro report using AI.
 
 ## Connecting to OpenBB Workspace
+
+<img width="800" alt="CleanShot 2025-11-09 at 09 50 37@2x" src="https://github.com/user-attachments/assets/ace1cab4-ba7c-4970-8bf0-13e69743c22c" />
 
 Follow these steps to connect this backend as a data source in OpenBB Pro:
 
@@ -28,7 +30,7 @@ Follow these steps to connect this backend as a data source in OpenBB Pro:
 
 Once added, you'll find Zeitgest app available in the Apps section of OpenBB Workspace.
 
-<img width="1316" height="1224" alt="CleanShot 2025-11-09 at 09 54 23@2x" src="https://github.com/user-attachments/assets/0ac88304-a9c7-490a-8440-26f2646b5d7e" />
+<img width="800" alt="CleanShot 2025-11-09 at 09 54 23@2x" src="https://github.com/user-attachments/assets/0ac88304-a9c7-490a-8440-26f2646b5d7e" />
 
 ### Available Widgets
 
