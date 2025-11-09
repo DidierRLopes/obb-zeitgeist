@@ -1,8 +1,8 @@
 # OpenBB Zeitgeist
 
-<img width="800" alt="CleanShot 2025-11-09 at 09 46 36@2x" src="https://github.com/user-attachments/assets/1b3996a2-627d-4550-b717-eceb913049c7" />
+From prediction markets to Macro report using AI. Based on https://github.com/pathikrit/zeitgeist.
 
-From prediction markets to Macro report using AI.
+<img width="800" alt="CleanShot 2025-11-09 at 09 46 36@2x" src="https://github.com/user-attachments/assets/1b3996a2-627d-4550-b717-eceb913049c7" />
 
 ## Connecting to OpenBB Workspace
 
