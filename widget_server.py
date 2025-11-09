@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import time
 from datetime import date
 from functools import wraps
 from textwrap import dedent
@@ -11,7 +12,7 @@ from dicttoxml import dicttoxml
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from gnews import GNews
 from markdown_it import MarkdownIt
 from pydantic import BaseModel, Field
@@ -20,11 +21,27 @@ from pydantic_ai import Agent
 # Load environment variables from .env file
 load_dotenv()
 
-BATCH_SIZE = 2
+BATCH_SIZE = 25
 RETRIES = 3
 DEFAULT_MODEL = "openai:gpt-4.1-2025-04-14"
 
 WIDGETS = {}
+
+# Simple in-memory cache
+CACHE = {}
+CACHE_DURATION = 3600  # 1 hours in seconds
+
+def get_cached_response(key):
+    if key in CACHE:
+        data, timestamp = CACHE[key]
+        if time.time() - timestamp < CACHE_DURATION:
+            return data
+        else:
+            del CACHE[key]
+    return None
+
+def set_cache(key, data):
+    CACHE[key] = (data, time.time())
 
 def register_widget(widget_config):
     def decorator(func):
@@ -70,6 +87,10 @@ app.add_middleware(
 @app.get("/")
 def read_root():
     return {"Info": "Zeitgeist Market Insights Widget Server"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
 
 @app.get("/widgets.json")
 def get_widgets():
@@ -338,8 +359,16 @@ async def generate_report(investor_type: str = "equities", gnews_api_key: str = 
     ]
 })
 @app.get("/zeitgeist_report")
-async def zeitgeist_report(request: Request, investor_type: str = "equities"):
+async def zeitgeist_report(request: Request, response: Response, investor_type: str = "equities"):
     """Generate Zeitgeist market insights report"""
+    cache_key = f"zeitgeist_report_{investor_type}"
+    
+    # Check cache first
+    cached_data = get_cached_response(cache_key)
+    if cached_data:
+        response.headers["Cache-Control"] = "public, max-age=7200"  # 2 hours
+        return cached_data
+    
     api_key = request.headers.get('X-OPENAI-API-KEY')
     if not api_key:
         api_key = os.environ.get("OPENAI_API_KEY")
@@ -359,6 +388,11 @@ async def zeitgeist_report(request: Request, investor_type: str = "equities"):
             gnews_api_key = os.environ.get("GNEWS_API_KEY")
         
         report = await generate_report(investor_type, gnews_api_key)
+        
+        # Cache the response
+        set_cache(cache_key, report)
+        response.headers["Cache-Control"] = "public, max-age=7200"  # 2 hours
+        
         return report
     finally:
         if original_key is not None:
@@ -391,8 +425,16 @@ async def zeitgeist_report(request: Request, investor_type: str = "equities"):
     ]
 })
 @app.get("/zeitgeist_html", response_class=HTMLResponse)
-async def zeitgeist_html(request: Request, investor_type: str = "equities"):
+async def zeitgeist_html(request: Request, response: Response, investor_type: str = "equities"):
     """Generate styled HTML version of Zeitgeist report"""
+    cache_key = f"zeitgeist_html_{investor_type}"
+    
+    # Check cache first
+    cached_data = get_cached_response(cache_key)
+    if cached_data:
+        response.headers["Cache-Control"] = "public, max-age=7200"  # 2 hours
+        return HTMLResponse(content=cached_data)
+    
     # Check for API key in headers first, then environment (header has priority)
     api_key = request.headers.get('X-OPENAI-API-KEY')
     if not api_key:
@@ -519,6 +561,10 @@ async def zeitgeist_html(request: Request, investor_type: str = "equities"):
     </div>
 </body>
 </html>"""
+    
+    # Cache the response
+    set_cache(cache_key, html)
+    response.headers["Cache-Control"] = "public, max-age=7200"  # 2 hours
     
     return HTMLResponse(content=html)
 
