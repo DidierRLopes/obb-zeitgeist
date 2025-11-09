@@ -10,7 +10,7 @@ import polars as pl
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from markdown_it import MarkdownIt
@@ -73,6 +73,17 @@ def read_root():
 @app.get("/widgets.json")
 def get_widgets():
     return WIDGETS
+
+@app.get("/apps.json")
+def get_apps():
+    """Apps configuration file for OpenBB Workspace"""
+    import json
+    try:
+        with open("apps.json", "r") as f:
+            apps_config = json.load(f)
+        return apps_config
+    except FileNotFoundError:
+        return []
 
 def fetch_from_kalshi() -> pl.DataFrame:
     API_URL = "https://api.elections.kalshi.com/trade-api/v2"
@@ -140,14 +151,26 @@ def fetch_from_polymarket() -> pl.DataFrame:
     print(f"Fetched {len(predictions)} from polymarket")
     return pl.DataFrame([simple_prediction(p) for p in predictions[:MAX_PREDICTIONS]])
 
-async def generate_report(investor_type: str = "equities") -> str:
+async def generate_report(investor_type: str = "equities", gnews_api_key: str = None) -> str:
     try:
         kalshi_predictions = fetch_from_kalshi()
         polymarket_predictions = fetch_from_polymarket()
         predictions = pl.concat([kalshi_predictions, polymarket_predictions])
         
         from gnews import GNews
-        news = GNews().get_top_news()
+        
+        # Initialize GNews with API key if provided
+        if gnews_api_key:
+            gnews = GNews(api_key=gnews_api_key)
+        else:
+            # Try environment variable
+            env_gnews_key = os.environ.get("GNEWS_API_KEY")
+            if env_gnews_key:
+                gnews = GNews(api_key=env_gnews_key)
+            else:
+                gnews = GNews()  # Use free tier
+        
+        news = gnews.get_top_news()
         print(f"Fetched {len(news)} news headlines")
         
         investor_profiles = {
@@ -313,14 +336,33 @@ async def generate_report(investor_type: str = "equities") -> str:
     ]
 })
 @app.get("/zeitgeist_report")
-async def zeitgeist_report(investor_type: str = "equities"):
+async def zeitgeist_report(request: Request, investor_type: str = "equities"):
     """Generate Zeitgeist market insights report"""
-    if "OPENAI_API_KEY" not in os.environ:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not found in environment")
+    # Check for API key in headers first, then environment
+    api_key = request.headers.get('X-OPENAI-API-KEY') or os.environ.get("OPENAI_API_KEY")
     
-    #report = await generate_report(investor_type)
-    report = "Hello"
-    return report
+    if not api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="OpenAI API key required. Set OPENAI_API_KEY environment variable or add 'X-OPENAI-API-KEY' header when connecting backend to OpenBB Workspace."
+        )
+    
+    # Temporarily set the API key in environment for pydantic-ai
+    original_key = os.environ.get("OPENAI_API_KEY")
+    os.environ["OPENAI_API_KEY"] = api_key
+    
+    try:
+        # Check for GNews API key in headers or environment
+        gnews_api_key = request.headers.get('X-GNEWS-API-KEY') or os.environ.get("GNEWS_API_KEY")
+        
+        report = await generate_report(investor_type, gnews_api_key)
+        return report
+    finally:
+        # Restore original environment state
+        if original_key is not None:
+            os.environ["OPENAI_API_KEY"] = original_key
+        elif "OPENAI_API_KEY" in os.environ:
+            del os.environ["OPENAI_API_KEY"]
 
 @register_widget({
     "name": "Zeitgeist HTML Report",
@@ -347,14 +389,35 @@ async def zeitgeist_report(investor_type: str = "equities"):
     ]
 })
 @app.get("/zeitgeist_html", response_class=HTMLResponse)
-async def zeitgeist_html(investor_type: str = "equities"):
+async def zeitgeist_html(request: Request, investor_type: str = "equities"):
     """Generate styled HTML version of Zeitgeist report"""
-    if "OPENAI_API_KEY" not in os.environ:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not found in environment")
+    # Check for API key in headers first, then environment
+    api_key = request.headers.get('X-OPENAI-API-KEY') or os.environ.get("OPENAI_API_KEY")
     
-    #markdown_report = await generate_report(investor_type)
-    #html_content = MarkdownIt().render(markdown_report)
-    html_content = "<h1>Zeitgeist Market Insights Report</h1>\n<p><em>HTML report generation is currently under maintenance. Please use the markdown report endpoint.</em></p>"
+    if not api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="OpenAI API key required. Set OPENAI_API_KEY environment variable or add 'X-OPENAI-API-KEY' header when connecting backend to OpenBB Workspace."
+        )
+    
+    # Temporarily set the API key in environment for pydantic-ai
+    original_key = os.environ.get("OPENAI_API_KEY")
+    os.environ["OPENAI_API_KEY"] = api_key
+    
+    try:
+        # Check for GNews API key in headers or environment
+        gnews_api_key = request.headers.get('X-GNEWS-API-KEY') or os.environ.get("GNEWS_API_KEY")
+        
+        markdown_report = await generate_report(investor_type, gnews_api_key)
+        html_content = MarkdownIt().render(markdown_report)
+    except Exception as e:
+        html_content = f"<h1>Error Generating Report</h1>\n<p>Error: {str(e)}</p>"
+    finally:
+        # Restore original environment state
+        if original_key is not None:
+            os.environ["OPENAI_API_KEY"] = original_key
+        elif "OPENAI_API_KEY" in os.environ:
+            del os.environ["OPENAI_API_KEY"]
     
     today = date.today()
     html = f"""<!DOCTYPE html>

@@ -1,0 +1,39 @@
+[
+  {
+    "name": "Zeitgeist Market Analysis",
+    "img": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTsBphBZoJz6tTM4zFI19WeyPojPXy1FJc1TA&s",
+    "description": "Harness the wisdom of prediction markets to anticipate market movements. This app analyzes data from Kalshi and Polymarket to provide AI-powered investment insights tailored to your investment style. Get daily market intelligence reports that synthesize prediction market signals with breaking news to help you stay ahead of market trends.",
+    "allowCustomization": true,
+    "tabs": {
+      "market-insights": {
+        "id": "market-insights",
+        "name": "Market Insights",
+        "layout": [
+          {
+            "i": "zeitgeist_html",
+            "x": 0,
+            "y": 2,
+            "w": 40,
+            "h": 35,
+            "state": {
+              "params": {
+                "investor_type": "equities"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "groups": [
+      {
+        "name": "Investor Profile",
+        "type": "param",
+        "paramName": "investor_type",
+        "defaultValue": "equities",
+        "widgetIds": [
+          "zeitgeist_html"
+        ]
+      }
+    ]
+  }
+]
