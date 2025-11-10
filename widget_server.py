@@ -23,7 +23,13 @@ load_dotenv()
 
 BATCH_SIZE = 25
 RETRIES = 3
-DEFAULT_MODEL = "openai:gpt-4.1-2025-04-14"
+DEFAULT_OPENAI_MODEL = "openai:gpt-4.1-2025-04-14"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-pro"
+
+MODEL_PROVIDERS = {
+    "openai": DEFAULT_OPENAI_MODEL,
+    "gemini": DEFAULT_GEMINI_MODEL
+}
 
 WIDGETS = {}
 
@@ -170,7 +176,7 @@ def fetch_from_polymarket() -> pl.DataFrame:
     print(f"Fetched {len(predictions)} from polymarket")
     return pl.DataFrame([simple_prediction(p) for p in predictions[:MAX_PREDICTIONS]])
 
-async def generate_report(investor_type: str = "equities", gnews_api_key: str = None) -> str:
+async def generate_report(investor_type: str = "equities", model_provider: str = "gemini", gnews_api_key: str = None) -> str:
     # Set up GNews API key in environment before importing
     original_gnews_key = None
     if gnews_api_key:
@@ -235,9 +241,12 @@ async def generate_report(investor_type: str = "equities", gnews_api_key: str = 
         class RelevantPrediction(BaseModel):
             id: str = Field(description="original id from input")
             topics: list[str] = Field(description="public companies or investment sectors or broad alternatives impacted")
-        
+
+        # Select the model based on provider
+        selected_model = MODEL_PROVIDERS.get(model_provider, DEFAULT_GEMINI_MODEL)
+
         relevant_prediction_agent = Agent(
-            model=DEFAULT_MODEL,
+            model=selected_model,
             output_type=list[RelevantPrediction],
             system_prompt=(
                 "<task>"
@@ -283,7 +292,7 @@ async def generate_report(investor_type: str = "equities", gnews_api_key: str = 
             return dicttoxml(input, xml_declaration=False, root=False, attr_type=False, return_bytes=False)
         
         synthesizing_agent = Agent(
-            model=DEFAULT_MODEL,
+            model=selected_model,
             output_type=str,
             system_prompt=(
                 f"{about_me}"
@@ -355,39 +364,65 @@ async def generate_report(investor_type: str = "equities", gnews_api_key: str = 
                 {"label": "Cryptocurrency", "value": "crypto"},
                 {"label": "Commodities", "value": "commodities"}
             ]
+        },
+        {
+            "paramName": "model_provider",
+            "value": "gemini",
+            "label": "AI Model",
+            "type": "text",
+            "description": "Select AI model provider",
+            "options": [
+                {"label": "Google Gemini 2.5 Pro", "value": "gemini"},
+                {"label": "OpenAI GPT-4.1", "value": "openai"}
+            ]
         }
     ]
 })
 @app.get("/zeitgeist_report")
-async def zeitgeist_report(request: Request, response: Response, investor_type: str = "equities"):
+async def zeitgeist_report(request: Request, response: Response, investor_type: str = "equities", model_provider: str = "gemini"):
     """Generate Zeitgeist market insights report"""
-    cache_key = f"zeitgeist_report_{investor_type}"
-    
+    cache_key = f"zeitgeist_report_{investor_type}_{model_provider}"
+
     # Check cache first
     cached_data = get_cached_response(cache_key)
     if cached_data:
         response.headers["Cache-Control"] = "public, max-age=7200"  # 2 hours
         return cached_data
-    
-    api_key = request.headers.get('X-OPENAI-API-KEY')
-    if not api_key:
-        api_key = os.environ.get("OPENAI_API_KEY")
-    
-    if not api_key:
-        raise HTTPException(
-            status_code=401,
-            detail="OpenAI API key required. Set OPENAI_API_KEY environment variable or add 'X-OPENAI-API-KEY' header when connecting backend to OpenBB Workspace."
-        )
-    
-    original_key = os.environ.get("OPENAI_API_KEY")
-    os.environ["OPENAI_API_KEY"] = api_key
-    
+
+    # Handle API keys based on model provider
+    if model_provider == "openai":
+        api_key = request.headers.get('X-OPENAI-API-KEY')
+        if not api_key:
+            api_key = os.environ.get("OPENAI_API_KEY")
+
+        if not api_key:
+            raise HTTPException(
+                status_code=401,
+                detail="OpenAI API key required. Set OPENAI_API_KEY environment variable or add 'X-OPENAI-API-KEY' header when connecting backend to OpenBB Workspace."
+            )
+
+        original_key = os.environ.get("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = api_key
+    else:  # gemini
+        api_key = request.headers.get('X-GEMINI-API-KEY')
+        if not api_key:
+            api_key = os.environ.get("GEMINI_API_KEY")
+
+        if not api_key:
+            raise HTTPException(
+                status_code=401,
+                detail="Gemini API key required. Set GEMINI_API_KEY environment variable or add 'X-GEMINI-API-KEY' header when connecting backend to OpenBB Workspace."
+            )
+
+        original_key = os.environ.get("GEMINI_API_KEY")
+        os.environ["GEMINI_API_KEY"] = api_key
+
     try:
         gnews_api_key = request.headers.get('X-GNEWS-API-KEY')
         if not gnews_api_key:
             gnews_api_key = os.environ.get("GNEWS_API_KEY")
-        
-        report = await generate_report(investor_type, gnews_api_key)
+
+        report = await generate_report(investor_type, model_provider, gnews_api_key)
         
         # Cache the response
         set_cache(cache_key, report)
@@ -395,15 +430,21 @@ async def zeitgeist_report(request: Request, response: Response, investor_type: 
         
         return report
     finally:
-        if original_key is not None:
-            os.environ["OPENAI_API_KEY"] = original_key
-        elif "OPENAI_API_KEY" in os.environ:
-            del os.environ["OPENAI_API_KEY"]
+        if model_provider == "openai":
+            if original_key is not None:
+                os.environ["OPENAI_API_KEY"] = original_key
+            elif "OPENAI_API_KEY" in os.environ:
+                del os.environ["OPENAI_API_KEY"]
+        else:  # gemini
+            if original_key is not None:
+                os.environ["GEMINI_API_KEY"] = original_key
+            elif "GEMINI_API_KEY" in os.environ:
+                del os.environ["GEMINI_API_KEY"]
 
 @register_widget({
     "name": "Zeitgeist HTML Report",
     "description": "Styled investment memo with market insights",
-    "category": "Market Analysis", 
+    "category": "Market Analysis",
     "type": "html",
     "endpoint": "zeitgeist_html",
     "gridData": {"w": 25, "h": 35},
@@ -421,49 +462,79 @@ async def zeitgeist_report(request: Request, response: Response, investor_type: 
                 {"label": "Cryptocurrency", "value": "crypto"},
                 {"label": "Commodities", "value": "commodities"}
             ]
+        },
+        {
+            "paramName": "model_provider",
+            "value": "gemini",
+            "label": "AI Model",
+            "type": "text",
+            "description": "Select AI model provider",
+            "options": [
+                {"label": "Google Gemini 2.5 Pro", "value": "gemini"},
+                {"label": "OpenAI GPT-4.1", "value": "openai"}
+            ]
         }
     ]
 })
 @app.get("/zeitgeist_html", response_class=HTMLResponse)
-async def zeitgeist_html(request: Request, response: Response, investor_type: str = "equities"):
+async def zeitgeist_html(request: Request, response: Response, investor_type: str = "equities", model_provider: str = "gemini"):
     """Generate styled HTML version of Zeitgeist report"""
-    cache_key = f"zeitgeist_html_{investor_type}"
-    
+    cache_key = f"zeitgeist_html_{investor_type}_{model_provider}"
+
     # Check cache first
     cached_data = get_cached_response(cache_key)
     if cached_data:
         response.headers["Cache-Control"] = "public, max-age=7200"  # 2 hours
         return HTMLResponse(content=cached_data)
-    
-    # Check for API key in headers first, then environment (header has priority)
-    api_key = request.headers.get('X-OPENAI-API-KEY')
-    if not api_key:
-        api_key = os.environ.get("OPENAI_API_KEY")
-    
-    if not api_key:
-        raise HTTPException(
-            status_code=401,
-            detail="OpenAI API key required. Set OPENAI_API_KEY environment variable or add 'X-OPENAI-API-KEY' header when connecting backend to OpenBB Workspace."
-        )
-    
-    # Temporarily set the API key in environment for pydantic-ai
-    original_key = os.environ.get("OPENAI_API_KEY")
-    os.environ["OPENAI_API_KEY"] = api_key
-    
+
+    # Handle API keys based on model provider
+    if model_provider == "openai":
+        api_key = request.headers.get('X-OPENAI-API-KEY')
+        if not api_key:
+            api_key = os.environ.get("OPENAI_API_KEY")
+
+        if not api_key:
+            raise HTTPException(
+                status_code=401,
+                detail="OpenAI API key required. Set OPENAI_API_KEY environment variable or add 'X-OPENAI-API-KEY' header when connecting backend to OpenBB Workspace."
+            )
+
+        original_key = os.environ.get("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = api_key
+    else:  # gemini
+        api_key = request.headers.get('X-GEMINI-API-KEY')
+        if not api_key:
+            api_key = os.environ.get("GEMINI_API_KEY")
+
+        if not api_key:
+            raise HTTPException(
+                status_code=401,
+                detail="Gemini API key required. Set GEMINI_API_KEY environment variable or add 'X-GEMINI-API-KEY' header when connecting backend to OpenBB Workspace."
+            )
+
+        original_key = os.environ.get("GEMINI_API_KEY")
+        os.environ["GEMINI_API_KEY"] = api_key
+
     try:
         gnews_api_key = request.headers.get('X-GNEWS-API-KEY')
         if not gnews_api_key:
             gnews_api_key = os.environ.get("GNEWS_API_KEY")
-        
-        markdown_report = await generate_report(investor_type, gnews_api_key)
+
+        markdown_report = await generate_report(investor_type, model_provider, gnews_api_key)
         html_content = MarkdownIt().render(markdown_report)
     except Exception as e:
         html_content = f"<h1>Error Generating Report</h1>\n<p>Error: {str(e)}</p>"
     finally:
-        if original_key is not None:
-            os.environ["OPENAI_API_KEY"] = original_key
-        elif "OPENAI_API_KEY" in os.environ:
-            del os.environ["OPENAI_API_KEY"]
+        if model_provider == "openai":
+            if original_key is not None:
+                os.environ["OPENAI_API_KEY"] = original_key
+            elif "OPENAI_API_KEY" in os.environ:
+                del os.environ["OPENAI_API_KEY"]
+        else:  # gemini
+            if original_key is not None:
+                os.environ["GEMINI_API_KEY"] = original_key
+            elif "GEMINI_API_KEY" in os.environ:
+                del os.environ["GEMINI_API_KEY"]
     
     today = date.today()
     html = f"""<!DOCTYPE html>

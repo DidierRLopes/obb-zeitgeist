@@ -16,17 +16,25 @@ Follow these steps to connect this backend as a data source in OpenBB Pro:
 4. Fill in the following details:
    - **Name**: Zeitgeist
    - **URL**: `https://obb-zeitgeist.fly.dev/`
-5. Click Add Authentication
-6. Add OpenAI API key
+5. Click Add Authentication and add your API keys (you only need keys for the AI model you plan to use):
+
+   **For Google Gemini (recommended, default):**
+   - **Key**: X-GEMINI-API-KEY
+   - **Value**: Get from https://aistudio.google.com/apikey
+   - **Location**: Header
+
+   **For OpenAI (optional):**
    - **Key**: X-OPENAI-API-KEY
-   - **Valye**: Get from https://platform.openai.com/api-keys
+   - **Value**: Get from https://platform.openai.com/api-keys
    - **Location**: Header
-7. Add GNEWS API key
+
+   **For News (optional but recommended):**
    - **Key**: X-GNEWS-API-KEY
-   - **Valye**: Get at: https://gnews.io (100 requests/day free)
+   - **Value**: Get at https://gnews.io (100 requests/day free)
    - **Location**: Header
-5. Click the **Test** button to verify the connection
-6. If the test is successful, click the **Add** button
+
+6. Click the **Test** button to verify the connection
+7. If the test is successful, click the **Add** button
 
 Once added, you'll find Zeitgest app available in the Apps section of OpenBB Workspace.
 
@@ -46,6 +54,13 @@ Once added, you'll find Zeitgest app available in the Apps section of OpenBB Wor
 
 **Local Development (.env file):**
 ```env
+# Choose one AI provider (Gemini is default)
+GEMINI_API_KEY=your-gemini-api-key-here
+# OR
 OPENAI_API_KEY=your-openai-api-key-here
+
+# Optional: News API
 GNEWS_API_KEY=your-gnews-api-key-here
 ```
+
+The app uses **Google Gemini 2.5 Pro** by default. You can switch to OpenAI GPT-4.1 using the "AI Model" dropdown in the widget.
