@@ -25,25 +25,6 @@
         ]
       }
     },
-    "groups": [
-      {
-        "name": "Investor Profile",
-        "type": "param",
-        "paramName": "investor_type",
-        "defaultValue": "equities",
-        "widgetIds": [
-          "zeitgeist_html"
-        ]
-      },
-      {
-        "name": "AI Model",
-        "type": "param",
-        "paramName": "model_provider",
-        "defaultValue": "gemini",
-        "widgetIds": [
-          "zeitgeist_html"
-        ]
-      }
-    ]
+    "groups": []
   }
 ]
