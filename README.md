@@ -52,7 +52,15 @@ Once added, you'll find Zeitgest app available in the Apps section of OpenBB Wor
 
 ## Local Setup
 
-**Local Development (.env file):**
+### Prerequisites
+
+1. Install [uv](https://github.com/astral-sh/uv) (Python package manager)
+2. Python 3.12 or higher
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
 ```env
 # Choose one AI provider (Gemini is default)
 GEMINI_API_KEY=your-gemini-api-key-here
@@ -64,3 +72,23 @@ GNEWS_API_KEY=your-gnews-api-key-here
 ```
 
 The app uses **Google Gemini 2.5 Pro** by default. You can switch to OpenAI GPT-4.1 using the "AI Model" dropdown in the widget.
+
+### Running Locally
+
+1. Clone the repository:
+```bash
+git clone https://github.com/DidierRLopes/obb-zeitgeist.git
+cd obb-zeitgeist
+```
+
+2. Install dependencies:
+```bash
+uv sync
+```
+
+3. Run the server:
+```bash
+uv run uvicorn widget_server:app --reload --port 8000
+```
+
+You can still follow the steps above to integrate with OpenBB Workspace, but the URL should now be http://127.0.0.1:8000
