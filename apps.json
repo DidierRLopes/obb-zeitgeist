@@ -17,7 +17,8 @@
             "h": 35,
             "state": {
               "params": {
-                "investor_type": "equities"
+                "investor_type": "equities",
+                "model_provider": "gemini"
               }
             }
           }
@@ -30,6 +31,15 @@
         "type": "param",
         "paramName": "investor_type",
         "defaultValue": "equities",
+        "widgetIds": [
+          "zeitgeist_html"
+        ]
+      },
+      {
+        "name": "AI Model",
+        "type": "param",
+        "paramName": "model_provider",
+        "defaultValue": "gemini",
         "widgetIds": [
           "zeitgeist_html"
         ]
